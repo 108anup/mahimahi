@@ -8,4 +8,5 @@ libpacket_a_SOURCES = packetshell.hh packetshell.cc queued_packet.hh \
                       drop_tail_packet_queue.hh drop_head_packet_queue.hh \
                       codel_packet_queue.cc codel_packet_queue.hh \
                       pie_packet_queue.cc pie_packet_queue.hh \
+                      cellular_packet_queue.cc cellular_packet_queue.hh \
                       bindworkaround.hh
