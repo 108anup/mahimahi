@@ -73,12 +73,13 @@ QueuedPacket CELLULARPacketQueue::dequeue( void )
   real_dq_rate_ = (1.0 * (real_dq_queue.size()-1))/20.0;
   observed_dq_rate_ = (1.0 * (dq_queue.size()-1))/(20.0);
   if (empty_time>0) {
-	int j=int((real_dq_rate_)*(now-empty_time));
+	int j=0;//int((observed_dq_rate_)*(now-empty_time));
 	for(int i=0;i<j;i++) {
 		real_dq_queue.push_back(empty_time+((i*(now-empty_time))/j));
 	}
   }
   if (size_packets()==1) {
+    real_dq_queue.push_back(now);
 	empty_time=now;
   }
   if (size_packets()>1) {

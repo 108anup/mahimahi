@@ -201,6 +201,9 @@ void LinkQueue::rationalize( const uint64_t now )
         while ( bytes_left_in_this_delivery > 0 ) {
             if ( not packet_in_transit_bytes_left_ ) {
                 if ( packet_queue_->empty() ) {
+                    if (packet_queue_->to_string().substr(0,3)=="cel" || packet_queue_->to_string().substr(0,3)=="rcp" || packet_queue_->to_string().substr(0,3)=="vcp") {
+                        packet_queue_->dequeue();
+                    }
                     break;
                 }
                 packet_in_transit_ = packet_queue_->dequeue();

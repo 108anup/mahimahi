@@ -29,7 +29,7 @@ private:
     std::deque<uint32_t> real_dq_queue;
    	std::deque<uint32_t> eq_queue;
     double credits;
-	int empty_time;
+    int empty_time;
     //Perfect knwoledge
 
     virtual const std::string & type( void ) const override
