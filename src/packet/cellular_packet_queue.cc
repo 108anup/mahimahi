@@ -3,6 +3,7 @@
 #include "cellular_packet_queue.hh"
 #include "timestamp.hh"
 #include <iostream>
+#include <utility>
 
 using namespace std;
 
@@ -14,12 +15,37 @@ CELLULARPacketQueue::CELLULARPacketQueue( const string & args )
     dq_queue ( {0} ),
     real_dq_queue ( {0} ), 
     eq_queue ( {0} ),
+    dequeue_events ( {} ),
     credits (5),
-	empty_time (0)
+	empty_time (0),
+    time_occupied (0),
+    calc_interval (get_arg( args, "calc_interval" ))
 {
-  if ( qdelay_ref_ == 0 || beta_==0) {
-    throw runtime_error( "CELLULAR AQM queue must have qdelay_ref, beta" );
+  if ( qdelay_ref_ == 0 || beta_==0 || calc_interval == 0) {
+    throw runtime_error( "CELLULAR AQM queue must have qdelay_ref, beta, calc_interval" );
   }
+}
+
+void CELLULARPacketQueue::_push_back(enum queue_event e, uint32_t tstamp){
+    if(dequeue_events.size() >= 1){
+        pair<enum queue_event, uint32_t> last = dequeue_events.back();
+        if(last.first == QUEUE_FILLED){
+            time_occupied += (tstamp - last.second);
+        }
+    }
+    dequeue_events.push_back(make_pair(e, tstamp));
+}
+
+void CELLULARPacketQueue::_pop_front(){
+    if(dequeue_events.size() >= 2){
+        pair<enum queue_event, uint32_t> first = dequeue_events[0];
+        pair<enum queue_event, uint32_t> second = dequeue_events[1];
+        if(first.first == QUEUE_FILLED){
+            time_occupied -= (second.second - first.second);
+        }
+    }
+    if(dequeue_events.size() >= 1)
+        dequeue_events.pop_front();
 }
 
 void CELLULARPacketQueue::enqueue( QueuedPacket && p )
@@ -59,49 +85,50 @@ void CELLULARPacketQueue::enqueue( QueuedPacket && p )
 
 
   assert( good() );
+
+  _push_back(QUEUE_FILLED, now);
 }
 
 
 QueuedPacket CELLULARPacketQueue::dequeue( void )
 {
+  // We get a callback every dequeue opportunity
   uint32_t now = timestamp();
   
   if(size_packets()==0) {
     return QueuedPacket("arbit", 0);
   }
+
+  // Following runs only if we used the dequeue opportunity
   double real_dq_rate_, observed_dq_rate_, target_rate;
-  real_dq_rate_ = (1.0 * (real_dq_queue.size()-1))/20.0;
-  observed_dq_rate_ = (1.0 * (dq_queue.size()-1))/(20.0);
-  if (empty_time>0) {
-	int j=0;//int((observed_dq_rate_)*(now-empty_time));
-	for(int i=0;i<j;i++) {
-		real_dq_queue.push_back(empty_time+((i*(now-empty_time))/j));
-	}
-  }
-  if (size_packets()==1) {
-    real_dq_queue.push_back(now);
-	empty_time=now;
-  }
-  if (size_packets()>1) {
-	 empty_time=0;
+
+  if (size_packets() == 1) {
+      real_dq_queue.push_back(now);
+      _push_back(QUEUE_EMTPY, now);
   }
 
-  while(now-real_dq_queue[0]>20 && real_dq_queue.size()>1 && now>real_dq_queue[1]) {
-    real_dq_queue.pop_front();
+  while(now-dequeue_events[0].second>calc_interval && dequeue_events.size()>1) {
+    _pop_front();
+  }
+
+  cout<<"Time occ: "<<time_occupied<<"\n";
+
+  while(now-real_dq_queue[0]>calc_interval && real_dq_queue.size()>1 && now>real_dq_queue[1]) {
+      real_dq_queue.pop_front();
   }
   real_dq_queue.push_back(now);
-
+  
   QueuedPacket ret = std::move( DroppingPacketQueue::dequeue () );
-  while(now-dq_queue[0]>20 && dq_queue.size()>1 && now>dq_queue[1]) {
+  while(now-dq_queue[0]>calc_interval && dq_queue.size()>1 && now>dq_queue[1]) {
     dq_queue.pop_front();
-   }
+  }
   dq_queue.push_back(now);
    
   double delta = 100.0;   //For stabilitilt delta should be greater than max RTT
-  
 
-  real_dq_rate_ = (1.0 * (real_dq_queue.size()-1))/20.0;
-  observed_dq_rate_ = (1.0 * (dq_queue.size()-1))/(20.0);
+  observed_dq_rate_ = (1.0 * (dq_queue.size()-1))/calc_interval;
+  real_dq_rate_ = (1.0 * (real_dq_queue.size()-1))/calc_interval;
+  //real_dq_rate_ = observed_dq_rate_ / (time_occupied / calc_interval);
   double current_qdelay = (size_packets() + 1) / real_dq_rate_;
   target_rate = 0.96*real_dq_rate_ + beta_ * (real_dq_rate_ / delta) * min(0.0, (qdelay_ref_ - current_qdelay));
   double credit_prob_ = (target_rate /  observed_dq_rate_) * 0.5;
