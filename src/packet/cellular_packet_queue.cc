@@ -106,6 +106,8 @@ QueuedPacket CELLULARPacketQueue::dequeue( void )
       real_dq_queue.push_back(now);
       _push_back(QUEUE_EMTPY, now);
   }
+  else
+      _push_back(QUEUE_FILLED, now);
 
   while(now-dequeue_events[0].second>calc_interval && dequeue_events.size()>1) {
     _pop_front();
