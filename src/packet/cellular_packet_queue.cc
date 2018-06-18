@@ -130,7 +130,7 @@ QueuedPacket CELLULARPacketQueue::dequeue( void )
 
   observed_dq_rate_ = (1.0 * (dq_queue.size()-1))/calc_interval;
   real_dq_rate_ = (1.0 * (real_dq_queue.size()-1))/calc_interval;
-  //real_dq_rate_ = observed_dq_rate_ / (time_occupied / calc_interval);
+  real_dq_rate_ = observed_dq_rate_ / (time_occupied / calc_interval);
   double current_qdelay = (size_packets() + 1) / real_dq_rate_;
   target_rate = 0.96*real_dq_rate_ + beta_ * (real_dq_rate_ / delta) * min(0.0, (qdelay_ref_ - current_qdelay));
   double credit_prob_ = (target_rate /  observed_dq_rate_) * 0.5;
