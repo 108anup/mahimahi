@@ -33,7 +33,7 @@ private:
     std::deque<uint32_t> real_dq_queue;
    	std::deque<uint32_t> eq_queue;
    	std::deque<pair<enum queue_event, uint32_t> > dequeue_events;
-    double credits;
+    int64_t credits;
     int empty_time;
     int32_t time_occupied;
     double calc_interval;

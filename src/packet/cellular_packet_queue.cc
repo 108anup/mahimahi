@@ -7,6 +7,14 @@
 
 using namespace std;
 
+int64_t div64_32(int64_t a, int32_t b){
+  return a/b;
+}
+
+const int32_t FP_MUL = (1<<28);
+const int32_t DEC_MUL = 1000000;
+
+
 CELLULARPacketQueue::CELLULARPacketQueue( const string & args )
   : DroppingPacketQueue(args),
     qdelay_ref_ ( get_arg( args, "qdelay_ref" ) ),
@@ -16,7 +24,7 @@ CELLULARPacketQueue::CELLULARPacketQueue( const string & args )
     real_dq_queue ( {0} ), 
     eq_queue ( {0} ),
     dequeue_events ( {} ),
-    credits (5),
+    credits (0),
 	empty_time (0),
     time_occupied (0),
     calc_interval (get_arg( args, "calc_interval" ))
@@ -59,15 +67,15 @@ void CELLULARPacketQueue::enqueue( QueuedPacket && p )
   } 
 
   if (mode==1) {
-    if (credits > 1) {
+    if (credits >= FP_MUL) {
       //cout<<0;
-      credits-=1;
+      credits -= FP_MUL;
     } else {
       if(p.contents[9]!=0) {
         p.contents[5]+=1;
         p.contents[9]-=1;
       } else {
-        credits-=1;
+        credits -= FP_MUL;
       }
       //what is this is 0? Problems when there is TCP_CA_RECOVERY
       //p.contents[p.contents.size() - 1] = p.contents[p.contents.size() - 1] + 1;
@@ -100,7 +108,7 @@ QueuedPacket CELLULARPacketQueue::dequeue( void )
   }
 
   // Following runs only if we used the dequeue opportunity
-  double real_dq_rate_, observed_dq_rate_, target_rate;
+  //double real_dq_rate_, observed_dq_rate_, target_rate;
 
   if (size_packets() == 1) {
       real_dq_queue.push_back(now);
@@ -126,11 +134,12 @@ QueuedPacket CELLULARPacketQueue::dequeue( void )
   }
   dq_queue.push_back(now);
    
-  double delta = 100.0;   //For stabilitilt delta should be greater than max RTT
+  int32_t delta = 250;   //For stabilitilt delta should be greater than max RTT
 
+  /*
   observed_dq_rate_ = (1.0 * (dq_queue.size()-1))/calc_interval;
   real_dq_rate_ = (1.0 * (real_dq_queue.size()-1))/calc_interval;
-  //real_dq_rate_ = observed_dq_rate_ / (time_occupied / calc_interval);
+  real_dq_rate_ = observed_dq_rate_ / (time_occupied / calc_interval);
   double current_qdelay = (size_packets() + 1) / real_dq_rate_;
   target_rate = 0.96*real_dq_rate_ + beta_ * (real_dq_rate_ / delta) * min(0.0, (qdelay_ref_ - current_qdelay));
   double credit_prob_ = (target_rate /  observed_dq_rate_) * 0.5;
@@ -139,17 +148,65 @@ QueuedPacket CELLULARPacketQueue::dequeue( void )
   credits += credit_prob_;
   if (credits > 5) {
     credits = 5;
-  }
+  }*/
+
+  int64_t fp_interval_by_delta = div64_32(((int64_t) calc_interval) * FP_MUL, (int32_t) delta);
+  int64_t queue_penalty = ((size_packets() + 1) * time_occupied - qdelay_ref_ * (dq_queue.size() - 1));
+  if (queue_penalty < 0)
+    queue_penalty = 0;
+
+  // due to powers of 10 in calc_interval 
+  // and delay_threshold and delta, division by 100 does not loose precision
+  int64_t numerator = div64_32((dq_queue.size() - 1) * ((int32_t) delta) * 96 - ((int32_t) 100 * beta_) * queue_penalty, 100);
+  if(numerator < 0)
+    numerator = 0;
+
+  int64_t fp_numerator = fp_interval_by_delta * numerator;
+  int32_t denominator = 2 * time_occupied * (dq_queue.size() - 1);
+
+  int64_t fp_fraction;
+  if(denominator == 0)
+    fp_fraction = FP_MUL;
+  else
+    fp_fraction = div64_32(fp_numerator, denominator);
+
+  if(fp_fraction > FP_MUL)
+    fp_fraction = FP_MUL;
+
+  credits += fp_fraction;
+
+
+
+
+
+
+  printf("fp_interval_by_delta: %ld, queue_penalty: %ld, numerator: %ld, "
+	 "fp_numerator: %ld, denominator: %d, fp_fraction: %ld, fraction %.9Lf\n", 
+	 fp_interval_by_delta, queue_penalty, numerator, fp_numerator, denominator, fp_fraction, ((long double) fp_fraction) / (0.0L + FP_MUL));
+
+  int64_t _to_print_fraction = div64_32(fp_fraction * DEC_MUL, FP_MUL);
+  int64_t _to_print_spare = div64_32(((int64_t) credits) * DEC_MUL, FP_MUL);
+
+  int64_t _to_print_dq_rate = div64_32(((int64_t) (dq_queue.size() - 1)) * DEC_MUL, calc_interval);
+  int64_t _to_print_target_rate = div64_32(_to_print_dq_rate * 2 * fp_fraction, FP_MUL);
+  printf("_to_print: fraction: %ld, spare %ld, dq_rate %ld, target_rate %ld, credits: %f\n", 
+	 _to_print_fraction, _to_print_spare, _to_print_dq_rate, _to_print_target_rate, (credits+0.0) / FP_MUL);
+  
+  
   if (mode==0)
   { 
-    if (credits>1) {
+    if (credits > FP_MUL) {
       if (ret.contents[ret.contents.size() - 1] == ret.contents[ret.contents.size() - 3]) {
-        credits -= 1;
+        credits -= FP_MUL;
       }
     } else {
       ret.contents[ret.contents.size() - 1] = ret.contents[ret.contents.size() - 1] + 1;
       ret.contents[ret.contents.size() - 3] = ret.contents[ret.contents.size() - 3] - 1;
     }
   }
+
+  if(credits > 5 * FP_MUL)
+    credits = 5 * FP_MUL;
+
   return ret;
 }
