@@ -134,7 +134,7 @@ QueuedPacket CELLULARPacketQueue::dequeue( void )
   }
   dq_queue.push_back(now);
    
-  int32_t delta = 250;   //For stabilitilt delta should be greater than max RTT
+  int32_t delta = 100;   //For stabilitilt delta should be greater than max RTT
 
   /*
   observed_dq_rate_ = (1.0 * (dq_queue.size()-1))/calc_interval;
